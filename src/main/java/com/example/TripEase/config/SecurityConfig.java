@@ -35,6 +35,7 @@ public class SecurityConfig {
                                 "/auth/**",
                                 "/customer/add",          // ✅ CUSTOMER REGISTRATION
                                 "/swagger-ui/**",
+                                "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
                         .anyRequest().authenticated()
