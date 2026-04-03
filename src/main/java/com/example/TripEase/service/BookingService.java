@@ -41,7 +41,7 @@ public class BookingService {
     @Autowired
     private CabRepository cabRepository;
 
-    @Autowired
+    @Autowired(required = false)
     private JavaMailSender javaMailSender;
 
 
@@ -160,17 +160,12 @@ public class BookingService {
        ------------------------------------------------- */
     private void sendEmail(Customer customer) {
 
-        String text = "Dear " + customer.getName() + ",\n\n"
-                + "Your cab booking has been successfully confirmed.\n\n"
-                + "Thank you for choosing TripEase. We hope you have a safe and pleasant journey.\n\n"
-                + "Regards,\n"
-                + "TripEase Team";
+        if (javaMailSender == null) return; // ✅ prevent crash
 
         SimpleMailMessage mailMessage = new SimpleMailMessage();
-        mailMessage.setFrom("noreply@tripease.com");
         mailMessage.setTo(customer.getEmailId());
-        mailMessage.setSubject("TripEase Booking Confirmation");
-        mailMessage.setText(text);
+        mailMessage.setSubject("Booking Confirmed");
+        mailMessage.setText("Your booking is confirmed");
 
         javaMailSender.send(mailMessage);
     }

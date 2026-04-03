@@ -1,21 +1,21 @@
-# Use official Java 17 image
-FROM eclipse-temurin:17-jdk
+# -------- BUILD STAGE --------
+FROM eclipse-temurin:17-jdk AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Copy project files
 COPY . .
 
 RUN chmod +x mvnw
-
-
-
-# Build the application
 RUN ./mvnw clean package -DskipTests
 
-# Expose port
+# -------- RUN STAGE --------
+FROM eclipse-temurin:17-jdk
+
+WORKDIR /app
+
+# Copy only jar from builder
+COPY --from=builder /app/target/*.jar app.jar
+
 EXPOSE 8080
 
-# Run the jar file
-CMD ["sh", "-c", "java -jar target/*.jar"]
+CMD ["java", "-jar", "app.jar"]
