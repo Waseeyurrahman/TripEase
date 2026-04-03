@@ -35,9 +35,9 @@ public class BookingController {
 
     @DeleteMapping("/cancel/{id}")
     @PreAuthorize("hasRole('USER')")
-    public String cancelBooking(@PathVariable int id) {
-        bookingService.cancelBooking(id);
-        return "Booking cancelled successfully";
+    public BookingResponse cancelBooking(@PathVariable int id) {
+        return bookingService.cancelBooking(id);
+
     }
 
     @GetMapping("/customer/{customerId}")
@@ -61,6 +61,18 @@ public class BookingController {
             @RequestParam TripStatus status) {
 
         return bookingService.updateBookingStatus(bookingId, status);
+    }
+
+    @PutMapping("/start/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public BookingResponse startRide(@PathVariable int id) {
+        return bookingService.startRide(id);
+    }
+
+    @PutMapping("/complete/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public BookingResponse completeRide(@PathVariable int id) {
+        return bookingService.completeRide(id);
     }
 
 

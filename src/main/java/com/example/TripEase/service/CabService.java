@@ -26,17 +26,22 @@ public class CabService {
 
     public CabResponse registerCab(CabRequest cabRequest, int driverId) {
 
-        Optional<Driver> optionalDriver = driverRepository.findById(driverId);
-        if(optionalDriver.isEmpty()){
-            throw new DriverNotFoundException("Invalid Driver Id!");
-        }
+        Driver driver = driverRepository.findById(driverId)
+                .orElseThrow(() -> new DriverNotFoundException("Invalid Driver Id!"));
 
-        Driver driver = optionalDriver.get();
+        // Step 1: Create cab
         Cab cab = CabTransformer.cabRequestToCab(cabRequest);
-        driver.setCab(cab);
 
-        Driver savedDriver = driverRepository.save(driver);// save both driver and cab
-        return CabTransformer.cabToCabResponse(savedDriver.getCab(),savedDriver);
+        // Step 2: Save cab FIRST
+        Cab savedCab = cabRepository.save(cab);
+
+        // Step 3: Set relationship
+        driver.setCab(savedCab);
+
+        // Step 4: Save driver
+        Driver savedDriver = driverRepository.save(driver);
+
+        return CabTransformer.cabToCabResponse(savedCab, savedDriver);
 
 
     }

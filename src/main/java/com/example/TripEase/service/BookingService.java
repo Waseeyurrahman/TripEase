@@ -14,11 +14,13 @@ import com.example.TripEase.repository.CabRepository;
 import com.example.TripEase.repository.CustomerRepository;
 import com.example.TripEase.repository.DriverRepository;
 import com.example.TripEase.transformer.BookingTransformer;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
+
 import org.springframework.web.bind.annotation.GetMapping;
 
 import java.util.ArrayList;
@@ -43,57 +45,67 @@ public class BookingService {
     private JavaMailSender javaMailSender;
 
 
+    @Transactional
     public BookingResponse bookCab(BookingRequest bookingRequest, int customerId) {
 
         // 1. Validate customer
-        Customer customer = customerRepository.findById(Long.valueOf(customerId) )
+        Customer customer = customerRepository.findById((long) customerId)        // ((long) customerId)
                 .orElseThrow(() ->
                         new CustomerNotFoundException("Invalid Customer Id"));
 
-        // 2. Find available cab
-        Cab availableCab = cabRepository.getAvailableCabRandomly();
-        if (availableCab == null) {
-            throw new CabUnavailableException("Sorry! No cabs available");
+        // 2. Get available drivers
+        List<Driver> drivers = driverRepository.findByAvailableTrue();
+
+        Driver selectedDriver = null;
+
+        for (Driver d : drivers) {
+            if (d.getCab() != null) {
+                selectedDriver = d;
+                break;
+            }
         }
 
-        // 3. Find driver for the cab
-        Driver driver = driverRepository.getDriverByCabId(availableCab.getCabId());
+        if (selectedDriver == null) {
+            throw new CabUnavailableException("No drivers with cab available");
+        }
 
-        // 4. Create booking entity
-        Booking booking = BookingTransformer.bookingRequestToBooking(
-                bookingRequest,
-                availableCab.getPerKilometerRate()
-        );
+        Driver driver = selectedDriver;
+        Cab cab = driver.getCab();
 
-        // 5. Set relationships (CRITICAL)
-        booking.setCustomer(customer);
-        booking.setCab(availableCab);
-        booking.setDriver(driver);
+        System.out.println("Driver count: " + drivers.size());
 
-        // 6. Save booking
+        for (Driver d : drivers) {
+            System.out.println("Driver: " + d.getDriverId() + " Cab: " + (d.getCab() != null));
+        }
+
+        // 4. Create booking
+        Booking booking = Booking.builder()
+                .pickup(bookingRequest.getPickup())
+                .destination(bookingRequest.getDestination())
+                .tripDistanceInKm(bookingRequest.getTripDistanceInKm())
+                .tripStatus(TripStatus.ASSIGNED)
+                .billAmount(bookingRequest.getTripDistanceInKm() * cab.getPerKilometerRate())
+                .customer(customer)
+                .driver(driver)
+                .cab(cab)
+                .build();
+
+        // 5. Mark driver unavailable
+        driver.setAvailable(false);
+
+        // 6. Save data
         Booking savedBooking = bookingRepository.save(booking);
-
-        // 7. Update cab availability
-        availableCab.setAvailable(false);
-        cabRepository.save(availableCab);
-
-        // 8. Maintain bidirectional consistency
-        customer.getBookings().add(savedBooking);
-        driver.getBookings().add(savedBooking);
-
-        customerRepository.save(customer);
         driverRepository.save(driver);
 
-        // 9. Send confirmation email
+        // 7. Send confirmation email
         sendEmail(customer);
 
-        // 10. Return response
+        // 8. Return response
         return BookingTransformer.bookingToBookingResponse(
-                savedBooking,
-                customer,
-                availableCab,
-                driver
+                savedBooking, customer, cab, driver
         );
+
+
     }
 
     /* -------------------------------------------------
@@ -116,19 +128,31 @@ public class BookingService {
     /* -------------------------------------------------
        CANCEL BOOKING
        ------------------------------------------------- */
-    public void cancelBooking(int bookingId) {
+    public BookingResponse cancelBooking(int bookingId) {
 
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() ->
                         new RuntimeException("Invalid booking id"));
+        if (booking.getTripStatus() == TripStatus.COMPLETED) {
+            throw new RuntimeException("Cannot cancel completed ride");
+        }
+        booking.setTripStatus(TripStatus.CANCELLED);
 
-        // Make cab available again
-        Cab cab = booking.getCab();
-        cab.setAvailable(true);
-        cabRepository.save(cab);
+        // Free driver
+        Driver driver = booking.getDriver();
+        if (driver != null) {
+            driver.setAvailable(true);
+            driverRepository.save(driver);
+        }
 
-        // Remove booking
-        bookingRepository.delete(booking);
+        Booking updated = bookingRepository.save(booking);
+
+        return BookingTransformer.bookingToBookingResponse(
+                updated,
+                updated.getCustomer(),
+                updated.getCab(),
+                updated.getDriver()
+        );
     }
 
     /* -------------------------------------------------
@@ -204,6 +228,60 @@ public class BookingService {
                 updatedBooking.getCustomer(),
                 updatedBooking.getCab(),
                 updatedBooking.getDriver()
+        );
+    }
+    /* -------------------------------------------------
+   START RIDE
+   ------------------------------------------------- */
+    public BookingResponse startRide(int bookingId) {
+
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() ->
+                        new RuntimeException("Invalid booking id"));
+
+        if (booking.getTripStatus() != TripStatus.ASSIGNED) {
+            throw new RuntimeException("Ride cannot be started");
+        }
+
+        booking.setTripStatus(TripStatus.ONGOING);
+
+        Booking updated = bookingRepository.save(booking);
+
+        return BookingTransformer.bookingToBookingResponse(
+                updated,
+                updated.getCustomer(),
+                updated.getCab(),
+                updated.getDriver()
+        );
+    }
+
+    /* -------------------------------------------------
+       COMPLETE RIDE
+       ------------------------------------------------- */
+    public BookingResponse completeRide(int bookingId) {
+
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() ->
+                        new RuntimeException("Invalid booking id"));
+
+        if (booking.getTripStatus() != TripStatus.ONGOING) {
+            throw new RuntimeException("Ride not in progress");
+        }
+
+        booking.setTripStatus(TripStatus.COMPLETED);
+
+        // Free driver
+        Driver driver = booking.getDriver();
+        driver.setAvailable(true);
+        driverRepository.save(driver);
+
+        Booking updated = bookingRepository.save(booking);
+
+        return BookingTransformer.bookingToBookingResponse(
+                updated,
+                updated.getCustomer(),
+                updated.getCab(),
+                updated.getDriver()
         );
     }
 }

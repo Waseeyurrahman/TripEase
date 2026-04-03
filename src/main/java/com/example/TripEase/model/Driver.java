@@ -20,6 +20,7 @@ public class Driver {
     private int driverId;
     private String name;
     private int age;
+    private boolean available = true;
 
     @Column(unique = true,nullable = false)
     private String emailId;

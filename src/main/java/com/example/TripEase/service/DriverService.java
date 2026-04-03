@@ -19,6 +19,7 @@ public class DriverService {
 
     public DriverResponse addDriver(DriverRequest driverRequest) {
         Driver driver = DriverTransformer.driverRequestToDriver(driverRequest);
+        driver.setAvailable(true);
         Driver savedDriver = driverRepository.save(driver);
         return DriverTransformer.driverToDriverResponse(savedDriver);
 
